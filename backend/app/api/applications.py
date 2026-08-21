@@ -1,0 +1,185 @@
+"""Application endpoints: create (score + decide + track), advance the pipeline,
+answer human-in-the-loop questions, and read the dashboard funnel."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlmodel import Session, func, select
+
+from app.agents import decide, score_job
+from app.db import get_session
+from app.models import (
+    PIPELINE_ORDER,
+    TERMINAL_STATES,
+    Application,
+    ApplicationStatus,
+    CandidateProfile,
+    DecisionCategory,
+    Job,
+)
+
+router = APIRouter(prefix="/applications", tags=["applications"])
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _log(app: Application, icon: str, event: str) -> None:
+    # SQLModel JSON columns register as dirty only when reassigned a new list.
+    app.actions = [*app.actions, {"at": _now(), "icon": icon, "event": event}]
+
+
+class CreateApplication(BaseModel):
+    profile_id: int
+    job_id: int
+
+
+class StatusUpdate(BaseModel):
+    status: ApplicationStatus
+
+
+class AnswerQuestion(BaseModel):
+    question: str
+    answer: str
+    remember: bool = False
+
+
+@router.get("", response_model=list[Application])
+def list_applications(session: Session = Depends(get_session)) -> list[Application]:
+    return list(session.exec(select(Application)).all())
+
+
+@router.get("/funnel")
+def funnel(session: Session = Depends(get_session)) -> dict[str, int]:
+    """Counts per status for the dashboard funnel."""
+    rows = session.exec(
+        select(Application.status, func.count()).group_by(Application.status)
+    ).all()
+    counts = {status.value: 0 for status in ApplicationStatus}
+    for status, n in rows:
+        counts[status.value if hasattr(status, "value") else status] = n
+    return counts
+
+
+@router.get("/{application_id}", response_model=Application)
+def get_application(application_id: int, session: Session = Depends(get_session)) -> Application:
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    return app
+
+
+@router.post("", response_model=Application, status_code=201)
+def create_application(body: CreateApplication, session: Session = Depends(get_session)) -> Application:
+    """Score the job, run the decision engine, and open a tracked application
+    with a seeded audit trail. The decision sets the initial pipeline status:
+    AUTO_APPLY -> preparing, REVIEW -> needs_review, REJECT -> rejected."""
+    profile = session.get(CandidateProfile, body.profile_id)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    job = session.get(Job, body.job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    existing = session.exec(
+        select(Application).where(
+            Application.profile_id == body.profile_id, Application.job_id == body.job_id
+        )
+    ).first()
+    if existing:
+        raise HTTPException(409, "Application already exists for this job (no duplicates)")
+
+    score = score_job(profile, job)
+    decision = decide(profile, job, score)
+
+    status_map = {
+        DecisionCategory.AUTO_APPLY: ApplicationStatus.PREPARING,
+        DecisionCategory.REVIEW: ApplicationStatus.NEEDS_REVIEW,
+        DecisionCategory.REJECT: ApplicationStatus.REJECTED,
+    }
+
+    app = Application(
+        job_id=job.id,
+        profile_id=profile.id,
+        status=status_map[decision.category],
+        fit_score=score.overall,
+        decision=decision.category.value,
+        created_at=_now(),
+    )
+    _log(app, "🔍", f"Job discovered at {job.company}")
+    _log(app, "🤖", f"Fit score calculated: {score.overall}%")
+    _log(app, "🧭", f"Decision: {decision.category.value} — {decision.reasons[0] if decision.reasons else ''}")
+    if decision.category == DecisionCategory.REVIEW:
+        _log(app, "⚠️", "User review requested")
+
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
+
+
+@router.post("/{application_id}/advance", response_model=Application)
+def advance(application_id: int, session: Session = Depends(get_session)) -> Application:
+    """Move an application to the next stage in the pipeline funnel."""
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    if app.status in TERMINAL_STATES:
+        raise HTTPException(409, f"Application is in terminal state '{app.status.value}'")
+    if app.status not in PIPELINE_ORDER:
+        raise HTTPException(409, f"Cannot advance from '{app.status.value}'")
+
+    idx = PIPELINE_ORDER.index(app.status)
+    if idx + 1 >= len(PIPELINE_ORDER):
+        raise HTTPException(409, "Already at the final pipeline stage (offer)")
+
+    app.status = PIPELINE_ORDER[idx + 1]
+    if app.status == ApplicationStatus.APPLIED:
+        app.applied_at = _now()
+        _log(app, "✓", "Application submitted")
+    else:
+        _log(app, "→", f"Advanced to {app.status.value}")
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
+
+
+@router.post("/{application_id}/status", response_model=Application)
+def set_status(application_id: int, body: StatusUpdate, session: Session = Depends(get_session)) -> Application:
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    app.status = body.status
+    if body.status == ApplicationStatus.APPLIED and not app.applied_at:
+        app.applied_at = _now()
+    _log(app, "•", f"Status set to {body.status.value}")
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
+
+
+@router.post("/{application_id}/answer", response_model=Application)
+def answer_question(application_id: int, body: AnswerQuestion, session: Session = Depends(get_session)) -> Application:
+    """Human-in-the-loop: record a user's answer to an ambiguous question and,
+    if the fit allows, clear the application out of NEEDS_REVIEW into preparing."""
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+
+    app.answers = {**app.answers, body.question: body.answer}
+    _log(app, "👤", f"User answered: {body.question}")
+    if body.remember:
+        _log(app, "💾", "Saved answer for future applications")
+    if app.status == ApplicationStatus.NEEDS_REVIEW:
+        app.status = ApplicationStatus.PREPARING
+        _log(app, "✓", "Cleared review — continuing application")
+
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
