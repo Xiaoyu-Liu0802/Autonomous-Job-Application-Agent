@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from app.api import applications, jobs, matches, profiles
+from app.api import applications, discovery, jobs, matches, profiles
 from app.config import settings
 from app.db import engine, init_db
 from app.seed import seed_if_empty
@@ -42,6 +42,7 @@ app.include_router(profiles.router)
 app.include_router(jobs.router)
 app.include_router(matches.router)
 app.include_router(applications.router)
+app.include_router(discovery.router)
 
 
 @app.get("/health", tags=["meta"])

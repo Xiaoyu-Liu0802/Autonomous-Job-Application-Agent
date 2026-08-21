@@ -8,12 +8,19 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "sqlmodel>=0.0.22",
     "pydantic-settings>=2.4",
+    "httpx>=0.27",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Browser automation for the application agent. Install with:
+#   uv sync --extra browser && uv run playwright install chromium
+browser = [
+    "playwright>=1.47",
 ]
 
 [tool.pytest.ini_options]

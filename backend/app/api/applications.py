@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
 from app.agents import decide, score_job
+from app.apply import ApplicationPlan, prepare_application
 from app.db import get_session
 from app.models import (
     PIPELINE_ORDER,
@@ -45,6 +46,11 @@ class AnswerQuestion(BaseModel):
     question: str
     answer: str
     remember: bool = False
+
+
+class PrepareRequest(BaseModel):
+    # The application form's custom questions (from the ATS page), if known.
+    questions: list[str] = []
 
 
 @router.get("", response_model=list[Application])
@@ -161,6 +167,28 @@ def set_status(application_id: int, body: StatusUpdate, session: Session = Depen
     session.commit()
     session.refresh(app)
     return app
+
+
+@router.post("/{application_id}/prepare", response_model=ApplicationPlan)
+def prepare(application_id: int, body: PrepareRequest, session: Session = Depends(get_session)) -> ApplicationPlan:
+    """Build the fill plan: which fields the agent can complete from the verified
+    profile + saved answers, and which questions still need the human. Nothing is
+    submitted here — this is the human-in-the-loop gate before browser work."""
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    profile = session.get(CandidateProfile, app.profile_id)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    plan = prepare_application(profile, custom_questions=body.questions, saved_answers=app.answers)
+    _log(app, "📝", f"Prepared application ({len(plan.known_fields)} fields ready, "
+                    f"{len(plan.open_questions)} need review)")
+    if plan.open_questions and app.status == ApplicationStatus.PREPARING:
+        app.status = ApplicationStatus.NEEDS_REVIEW
+    session.add(app)
+    session.commit()
+    return plan
 
 
 @router.post("/{application_id}/answer", response_model=Application)

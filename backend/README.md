@@ -31,8 +31,11 @@ Settings are read from env vars (prefix `JOBPILOT_`) or a `.env` file:
 | GET/POST | `/profiles` | List / create candidate profiles |
 | GET | `/profiles/{id}` | Fetch a profile |
 | GET/POST | `/jobs` | List / create jobs (dedupes on `external_id`) |
+| POST | `/discovery/run` | Pull real jobs from ATS boards (default set or a posted list), dedupe, store |
+| POST | `/discovery/import-url` | Import one posting from a pasted URL |
 | GET | `/matches/{profile_id}` | Score every job; `?min_score=`, `?category=` filters |
 | POST | `/applications` | Score + decide + open a tracked application |
+| POST | `/applications/{id}/prepare` | Build the fill/review plan (fields to fill + questions for the human) |
 | GET | `/applications` | List applications |
 | GET | `/applications/{id}` | Application detail (incl. timeline) |
 | POST | `/applications/{id}/advance` | Move to next pipeline stage |
