@@ -38,7 +38,7 @@ the interesting part is the agent architecture, not the UI:
 | **1 — Agentic core** | Domain models, fit-scoring engine, decision engine, FastAPI service, SQLite persistence, seed data, tests | ✅ **Done** |
 | **2 — Real job discovery** | Pluggable sources + Greenhouse / Lever / Ashby ATS-API adapters, offline text normalizer (skills/years/education/salary), dedupe, paste-a-URL import | ✅ **Done** |
 | **3 — Application agent** | Human-in-the-loop preparation (field mapping + question routing) + Playwright "fill-and-pause" runner (never submits, never bypasses CAPTCHA) | ✅ **Done** |
-| 4 — Dashboard | Next.js funnel + application table + timeline + review UI | ⏳ Planned |
+| **4 — Dashboard** | Next.js UI: pipeline funnel, ranked matches with score breakdowns, application table, per-application timeline + human-in-the-loop review, discovery controls | ✅ **Done** |
 | 5 — LLM layer | Resume tailoring & answer reasoning with "never fabricate" guardrails + confidence | ⏳ Planned |
 
 > Verified live: a discovery run against the Anthropic (Greenhouse) and OpenAI
@@ -137,6 +137,26 @@ To enable the browser runner:
 uv sync --extra browser && uv run playwright install chromium
 ```
 
+## Quickstart (dashboard)
+
+The Next.js dashboard talks to the API at `http://localhost:8000` (override with
+`NEXT_PUBLIC_API_URL`). With the backend running:
+
+```sh
+cd frontend
+npm install
+npm run dev                                # http://localhost:3000
+```
+
+Pages:
+
+- **Overview** — pipeline funnel + tracked / applied / interview / offer stats
+- **Matches** — every job scored & ranked, with an expandable per-dimension
+  breakdown and one-click "Track"
+- **Applications** — the tracked pipeline; drill into any row for its timeline
+  and the human-in-the-loop prepare/answer flow
+- **Discovery** — run the ATS boards or import a single posting by URL
+
 ## Repo layout
 
 ```
@@ -151,6 +171,11 @@ backend/
     seed.py     # sample data
     main.py     # FastAPI app
   tests/        # 31 unit tests (matching, decision, normalize, discovery, prepare)
+frontend/
+  src/
+    app/        # Overview, matches, applications (+ [id] detail), discovery pages
+    components/ # Nav + shared UI (cards, badges, score bars)
+    lib/        # typed API client + useAsync hook
 ```
 
 ## Safety (hard rules)
