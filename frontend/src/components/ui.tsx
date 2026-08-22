@@ -40,17 +40,24 @@ const STATUS_STYLES: Partial<Record<ApplicationStatus, string>> = {
   technical_interview: "bg-purple-100 text-purple-700",
   onsite: "bg-purple-100 text-purple-700",
   offer: "bg-green-100 text-green-800",
-  rejected: "bg-gray-100 text-gray-500",
+  skipped: "bg-slate-100 text-slate-500",
+  rejected: "bg-red-100 text-red-700",
   withdrawn: "bg-gray-100 text-gray-500",
   ghosted: "bg-gray-100 text-gray-500",
   expired: "bg-gray-100 text-gray-500",
+};
+
+// A few statuses read poorly as a raw enum value.
+const STATUS_LABEL: Partial<Record<ApplicationStatus, string>> = {
+  skipped: "skipped by agent",
+  needs_review: "needs review",
 };
 
 export function StatusBadge({ status }: { status: ApplicationStatus }) {
   const style = STATUS_STYLES[status] ?? "bg-gray-100 text-gray-600";
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${style}`}>
-      {status.replace(/_/g, " ")}
+      {STATUS_LABEL[status] ?? status.replace(/_/g, " ")}
     </span>
   );
 }

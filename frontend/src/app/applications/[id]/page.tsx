@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { jobpilot, type ApplicationPlan, type DraftedAnswer, type TailoredResume } from "@/lib/api";
+import { jobpilot, type ApplicationPlan, type ApplicationStatus, type DraftedAnswer, type TailoredResume } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { Card, ErrorBox, FitBadge, Spinner, StatusBadge } from "@/components/ui";
 
@@ -12,6 +12,37 @@ const DEFAULT_QUESTIONS = [
   "What is your expected salary?",
   "Why do you want to work here?",
 ];
+
+// Honest manual tracker. Pre-submit, the only forward action is "Mark as
+// submitted" (the human clicks Submit on the real ATS — fill-and-pause). After
+// that, the user logs real-world events as they actually happen; JobPilot has
+// no email/ATS integration, so nothing here is scraped or guessed.
+const PRE_SUBMIT: ApplicationStatus[] = ["preparing", "needs_review"];
+const ACTIVE_POST_SUBMIT: ApplicationStatus[] = [
+  "applied", "recruiter_screen", "technical_interview", "onsite",
+];
+
+// Real events the user can log once submitted, grouped for the UI.
+const PROGRESS_EVENTS: { status: ApplicationStatus; label: string }[] = [
+  { status: "recruiter_screen", label: "📞 Recruiter screen" },
+  { status: "technical_interview", label: "💻 Interview" },
+  { status: "onsite", label: "🏢 Onsite" },
+  { status: "offer", label: "🎉 Offer" },
+];
+const OUTCOME_EVENTS: { status: ApplicationStatus; label: string }[] = [
+  { status: "rejected", label: "❌ Rejected" },
+  { status: "ghosted", label: "👻 Ghosted" },
+  { status: "withdrawn", label: "🚪 Withdrew" },
+];
+
+const CLOSED_LABEL: Partial<Record<ApplicationStatus, string>> = {
+  skipped: "Skipped by agent — not applied",
+  rejected: "Closed — rejected by employer",
+  withdrawn: "Closed — you withdrew",
+  ghosted: "Closed — ghosted",
+  expired: "Closed — expired",
+  offer: "🎉 Offer — congratulations!",
+};
 
 export default function ApplicationDetailPage() {
   const params = useParams<{ id: string }>();
@@ -30,13 +61,17 @@ export default function ApplicationDetailPage() {
   const [drafting, setDrafting] = useState<string | null>(null);
   const [resume, setResume] = useState<TailoredResume | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function draft(question: string) {
     setDrafting(question);
+    setNotice(null);
     try {
       const d = await jobpilot.draftAnswer(id, question);
       setDrafts((m) => ({ ...m, [question]: d }));
       if (d.answer) setAnswers((a) => ({ ...a, [question]: d.answer }));
+    } catch (e) {
+      setNotice((e as Error).message);
     } finally {
       setDrafting(null);
     }
@@ -44,8 +79,11 @@ export default function ApplicationDetailPage() {
 
   async function tailorResume(jobId: number) {
     setBusy(true);
+    setNotice(null);
     try {
       setResume(await jobpilot.tailorResume(data!.app.profile_id, jobId));
+    } catch (e) {
+      setNotice((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -53,10 +91,13 @@ export default function ApplicationDetailPage() {
 
   async function runPrepare() {
     setBusy(true);
+    setNotice(null);
     try {
       const qs = questions.split("\n").map((q) => q.trim()).filter(Boolean);
       setPlan(await jobpilot.prepare(id, qs));
       reload();
+    } catch (e) {
+      setNotice((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -65,20 +106,39 @@ export default function ApplicationDetailPage() {
   async function saveAnswer(q: string) {
     if (!answers[q]) return;
     setBusy(true);
+    setNotice(null);
     try {
       await jobpilot.answer(id, q, answers[q], true);
       setPlan((p) => p && { ...p, open_questions: p.open_questions.filter((oq) => oq.question !== q) });
       reload();
+    } catch (e) {
+      setNotice((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
 
-  async function advance() {
+  async function submit() {
     setBusy(true);
+    setNotice(null);
     try {
-      await jobpilot.advance(id);
+      await jobpilot.submit(id);
       reload();
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logEvent(status: ApplicationStatus) {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await jobpilot.logEvent(id, status);
+      reload();
+    } catch (e) {
+      setNotice((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -109,14 +169,60 @@ export default function ApplicationDetailPage() {
             </a>
           )}
         </div>
-        <button
-          onClick={advance}
-          disabled={busy}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          Advance pipeline →
-        </button>
+        {PRE_SUBMIT.includes(app.status) ? (
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            title="Record that you submitted this on the real ATS"
+          >
+            Mark as submitted ✔
+          </button>
+        ) : (
+          <span className="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-500">
+            {CLOSED_LABEL[app.status] ?? app.status.replace(/_/g, " ")}
+          </span>
+        )}
       </div>
+
+      {/* Post-submit: log real-world events as they happen (manual, not scraped). */}
+      {ACTIVE_POST_SUBMIT.includes(app.status) && (
+        <Card>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-2 text-sm text-gray-500">Log what actually happened:</span>
+            {PROGRESS_EVENTS.filter((e) => e.status !== app.status).map((e) => (
+              <button
+                key={e.status}
+                onClick={() => logEvent(e.status)}
+                disabled={busy}
+                className="rounded-md border border-gray-300 px-2.5 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                {e.label}
+              </button>
+            ))}
+            <span className="mx-1 text-gray-300">|</span>
+            {OUTCOME_EVENTS.map((e) => (
+              <button
+                key={e.status}
+                onClick={() => logEvent(e.status)}
+                disabled={busy}
+                className="rounded-md border border-gray-200 px-2.5 py-1 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-400">
+            JobPilot has no inbox/ATS access — these are entered by you, not detected automatically.
+          </p>
+        </Card>
+      )}
+
+      {notice && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {notice}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Prepare / human-in-the-loop */}

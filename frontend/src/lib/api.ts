@@ -57,7 +57,7 @@ export interface ScoredJob {
 export type ApplicationStatus =
   | "discovered" | "matched" | "preparing" | "needs_review" | "applied"
   | "recruiter_screen" | "technical_interview" | "onsite" | "offer"
-  | "rejected" | "withdrawn" | "ghosted" | "expired";
+  | "skipped" | "rejected" | "withdrawn" | "ghosted" | "expired";
 
 export interface ActionEvent {
   at: string;
@@ -186,6 +186,13 @@ export const jobpilot = {
     }),
   advance: (id: number) =>
     api<Application>(`/applications/${id}/advance`, { method: "POST" }),
+  submit: (id: number) =>
+    api<Application>(`/applications/${id}/submit`, { method: "POST" }),
+  logEvent: (id: number, status: ApplicationStatus) =>
+    api<Application>(`/applications/${id}/log-event`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
   prepare: (id: number, questions: string[]) =>
     api<ApplicationPlan>(`/applications/${id}/prepare`, {
       method: "POST",

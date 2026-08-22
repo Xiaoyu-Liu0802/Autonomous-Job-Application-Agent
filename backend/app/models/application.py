@@ -21,7 +21,8 @@ class ApplicationStatus(str, Enum):
     ONSITE = "onsite"
     OFFER = "offer"
     # Terminal
-    REJECTED = "rejected"
+    SKIPPED = "skipped"        # the *agent* decided not to apply (REJECT decision)
+    REJECTED = "rejected"      # the *employer* rejected us (a real, post-submit outcome)
     WITHDRAWN = "withdrawn"
     GHOSTED = "ghosted"
     EXPIRED = "expired"
@@ -41,11 +42,23 @@ PIPELINE_ORDER: list[ApplicationStatus] = [
 ]
 
 TERMINAL_STATES: set[ApplicationStatus] = {
+    ApplicationStatus.SKIPPED,
     ApplicationStatus.REJECTED,
     ApplicationStatus.WITHDRAWN,
     ApplicationStatus.GHOSTED,
     ApplicationStatus.EXPIRED,
 }
+
+# Stages that only make sense to log *after* the human has actually submitted.
+POST_SUBMIT_STATES: list[ApplicationStatus] = [
+    ApplicationStatus.RECRUITER_SCREEN,
+    ApplicationStatus.TECHNICAL_INTERVIEW,
+    ApplicationStatus.ONSITE,
+    ApplicationStatus.OFFER,
+    ApplicationStatus.REJECTED,
+    ApplicationStatus.GHOSTED,
+    ApplicationStatus.WITHDRAWN,
+]
 
 
 class Application(SQLModel, table=True):
