@@ -8,10 +8,14 @@ need the user. This is the human-in-the-loop gate before any browser work.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from app.models import CandidateProfile
+
+if TYPE_CHECKING:
+    from app.models import Job
 
 # Questions the agent must never answer on its own without a saved/user answer.
 _SENSITIVE = [
@@ -111,7 +115,14 @@ def prepare_application(
     profile: CandidateProfile,
     custom_questions: list[str] | None = None,
     saved_answers: dict[str, str] | None = None,
+    job: "Job | None" = None,
 ) -> ApplicationPlan:
+    """Build the fill plan. When a ``job`` is supplied, the LLM layer drafts a
+    *grounded* answer for questions we can't answer structurally: a fully
+    grounded, high-confidence draft is promoted to a fillable field; anything
+    weaker is attached to the open question as a reviewable suggestion. The
+    anti-fabrication guardrail runs inside ``draft_answer`` — nothing ungrounded
+    is ever promoted."""
     saved_answers = saved_answers or {}
     known = build_known_fields(profile)
     open_qs: list[OpenQuestion] = []
@@ -120,7 +131,19 @@ def prepare_application(
         result = classify_question(question, profile, saved_answers)
         if isinstance(result, PlannedField):
             known.append(result)
-        else:
-            open_qs.append(result)
+            continue
+
+        if job is not None:
+            # Lazy import keeps the LLM layer optional for pure field mapping.
+            from app.llm import draft_answer
+
+            draft = draft_answer(profile, job, question)
+            if draft.auto_fillable:
+                known.append(PlannedField(field=question, value=draft.answer, confidence=draft.confidence))
+                continue
+            if draft.answer:
+                result = OpenQuestion(question=result.question, reason=result.reason, suggestion=draft.answer)
+
+        open_qs.append(result)
 
     return ApplicationPlan(known_fields=known, open_questions=open_qs)

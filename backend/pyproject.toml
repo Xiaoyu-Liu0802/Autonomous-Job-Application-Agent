@@ -22,6 +22,12 @@ dev = [
 browser = [
     "playwright>=1.47",
 ]
+# Real LLM provider for grounded answer drafting / resume tailoring. Optional —
+# the app runs fully on the deterministic offline provider without it. Install:
+#   uv sync --extra llm   (then set JOBPILOT_ANTHROPIC_API_KEY=...)
+llm = [
+    "anthropic>=0.39",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

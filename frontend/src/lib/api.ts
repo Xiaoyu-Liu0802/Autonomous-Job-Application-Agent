@@ -113,6 +113,42 @@ export interface DiscoveryResult {
   errors: string[];
 }
 
+export interface LlmStatus {
+  provider: string;
+  configured: string;
+  model: string;
+  min_answer_confidence: number;
+}
+
+export interface DraftedAnswer {
+  question: string;
+  answer: string;
+  confidence: number;
+  grounded: boolean;
+  auto_fillable: boolean;
+  needs_human: boolean;
+  reason: string;
+  used_facts: string[];
+  violations: string[];
+  provider: string;
+}
+
+export interface ResumeBullet {
+  text: string;
+  relevance: number;
+  source: string;
+}
+
+export interface TailoredResume {
+  summary: string;
+  highlighted_skills: string[];
+  missing_skills: string[];
+  emphasis: ResumeBullet[];
+  grounded: boolean;
+  violations: string[];
+  provider: string;
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -169,5 +205,16 @@ export const jobpilot = {
     api<Job>("/discovery/import-url", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+  llmStatus: () => api<LlmStatus>("/llm/status"),
+  draftAnswer: (applicationId: number, question: string) =>
+    api<DraftedAnswer>(`/llm/applications/${applicationId}/draft-answer`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+  tailorResume: (profile_id: number, job_id: number) =>
+    api<TailoredResume>("/llm/tailor-resume", {
+      method: "POST",
+      body: JSON.stringify({ profile_id, job_id }),
     }),
 };

@@ -39,7 +39,7 @@ the interesting part is the agent architecture, not the UI:
 | **2 — Real job discovery** | Pluggable sources + Greenhouse / Lever / Ashby ATS-API adapters, offline text normalizer (skills/years/education/salary), dedupe, paste-a-URL import | ✅ **Done** |
 | **3 — Application agent** | Human-in-the-loop preparation (field mapping + question routing) + Playwright "fill-and-pause" runner (never submits, never bypasses CAPTCHA) | ✅ **Done** |
 | **4 — Dashboard** | Next.js UI: pipeline funnel, ranked matches with score breakdowns, application table, per-application timeline + human-in-the-loop review, discovery controls | ✅ **Done** |
-| 5 — LLM layer | Resume tailoring & answer reasoning with "never fabricate" guardrails + confidence | ⏳ Planned |
+| **5 — LLM layer** | Grounded answer reasoning + resume tailoring behind a hard anti-fabrication guardrail; runs offline with zero credentials, upgrades to the Anthropic API when configured | ✅ **Done** |
 
 > Verified live: a discovery run against the Anthropic (Greenhouse) and OpenAI
 > (Ashby) boards pulls **~1,200 real open roles**, auto-scores them, and routes
@@ -101,6 +101,44 @@ best-effort public-page parse.
 > banned. JobPilot deliberately does **not** scrape them. Use paste-a-URL to
 > import a specific posting you found there instead.
 
+## LLM layer — grounded, or it doesn't ship (never fabricate)
+
+The interesting problem in an application agent isn't generating fluent text —
+it's **guaranteeing the text is true**. JobPilot treats the verified profile as
+the *only* ground truth and enforces it structurally:
+
+1. **Facts, enumerated** — the profile is flattened into atomic, citable facts
+   (`skill:python`, `exp:0:summary`, `auth:sponsorship`, …). Those, plus the job
+   posting, are the entire universe an answer may draw on.
+2. **Generate** — the offline provider (default, no key) assembles answers
+   *only* from those facts, so it can't fabricate by construction. With
+   `JOBPILOT_ANTHROPIC_API_KEY` set it uses the Anthropic API instead, prompted
+   to cite fact IDs and use nothing else.
+3. **Verify (the guardrail)** — every draft, *from any provider*, is scanned for
+   proper nouns and numbers that aren't traceable to a fact or the posting. An
+   invented employer, tech, metric, or percentage is caught here regardless of
+   how confident the model sounded.
+4. **Gate** — only a **fully grounded, above-confidence** draft is auto-filled.
+   Anything weaker (or sensitive — salary, demographics) is handed back to *you*
+   as a suggestion. The agent never guesses on the record.
+
+Same pipeline powers **resume tailoring**: it reorders and summarizes your real
+experience to emphasize overlap with a role, surfaces the honest skill gaps, and
+runs the summary through the guardrail — emphasize only, never embellish.
+
+```
+POST /llm/draft-answer     {profile_id, job_id, question}  -> grounded answer + confidence
+POST /llm/tailor-resume    {profile_id, job_id}            -> summary, highlights, gaps, emphasis
+GET  /llm/status                                           -> active provider + guardrail settings
+```
+
+To use the real Anthropic model instead of the offline provider:
+
+```sh
+uv sync --extra llm
+JOBPILOT_ANTHROPIC_API_KEY=sk-ant-... uv run uvicorn app.main:app --reload
+```
+
 ## Application agent (fill, then pause)
 
 Before any browser work, `/applications/{id}/prepare` produces a plan: the
@@ -128,7 +166,9 @@ every decision branch. Then:
 - `POST /discovery/import-url {"url": "..."}` — import a single posting
 - `GET /matches/1` — score every job for the sample profile
 - `POST /applications {"profile_id":1,"job_id":1}` — open a tracked application
-- `POST /applications/1/prepare {"questions":[...]}` — build the fill/review plan
+- `POST /applications/1/prepare {"questions":[...]}` — build the fill/review plan (drafts grounded answers)
+- `POST /llm/draft-answer {"profile_id":1,"job_id":1,"question":"..."}` — grounded answer + confidence
+- `POST /llm/tailor-resume {"profile_id":1,"job_id":1}` — emphasize real experience for a role
 - `GET /applications/funnel` — dashboard funnel counts
 
 To enable the browser runner:
@@ -167,10 +207,11 @@ backend/
     sources/    # ATS adapters (greenhouse/lever/ashby), normalizer, url_import
     services/   # discovery orchestration
     apply/      # prepare.py (field map + HITL) + browser.py (Playwright, optional)
-    api/        # profiles, jobs, matches, applications, discovery routers
+    llm/        # facts.py + guardrails.py (anti-fabrication) + provider.py + answers.py + resume.py
+    api/        # profiles, jobs, matches, applications, discovery, llm routers
     seed.py     # sample data
     main.py     # FastAPI app
-  tests/        # 31 unit tests (matching, decision, normalize, discovery, prepare)
+  tests/        # 48 unit tests (matching, decision, normalize, discovery, prepare, llm)
 frontend/
   src/
     app/        # Overview, matches, applications (+ [id] detail), discovery pages

@@ -180,8 +180,11 @@ def prepare(application_id: int, body: PrepareRequest, session: Session = Depend
     profile = session.get(CandidateProfile, app.profile_id)
     if not profile:
         raise HTTPException(404, "Profile not found")
+    job = session.get(Job, app.job_id)
 
-    plan = prepare_application(profile, custom_questions=body.questions, saved_answers=app.answers)
+    plan = prepare_application(
+        profile, custom_questions=body.questions, saved_answers=app.answers, job=job
+    )
     _log(app, "📝", f"Prepared application ({len(plan.known_fields)} fields ready, "
                     f"{len(plan.open_questions)} need review)")
     if plan.open_questions and app.status == ApplicationStatus.PREPARING:

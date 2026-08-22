@@ -17,5 +17,17 @@ class Settings(BaseSettings):
     # Seed sample data on first startup if the DB is empty.
     seed_on_startup: bool = True
 
+    # ── LLM layer (Milestone 5) ───────────────────────────────────────────
+    # Provider selection: "auto" uses Anthropic when a key + SDK are present,
+    # otherwise the deterministic offline provider (grounded by construction).
+    # Force one with "offline" or "anthropic".
+    llm_provider: str = "auto"
+    anthropic_api_key: str = ""
+    llm_model: str = "claude-sonnet-5"
+
+    # A drafted answer below this confidence is never auto-filled — it is routed
+    # to the human as a suggestion instead.
+    min_answer_confidence: float = 75.0
+
 
 settings = Settings()

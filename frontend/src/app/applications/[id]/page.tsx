@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { jobpilot, type ApplicationPlan } from "@/lib/api";
+import { jobpilot, type ApplicationPlan, type DraftedAnswer, type TailoredResume } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { Card, ErrorBox, FitBadge, Spinner, StatusBadge } from "@/components/ui";
 
@@ -26,7 +26,30 @@ export default function ApplicationDetailPage() {
   const [plan, setPlan] = useState<ApplicationPlan | null>(null);
   const [questions, setQuestions] = useState(DEFAULT_QUESTIONS.join("\n"));
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, DraftedAnswer>>({});
+  const [drafting, setDrafting] = useState<string | null>(null);
+  const [resume, setResume] = useState<TailoredResume | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function draft(question: string) {
+    setDrafting(question);
+    try {
+      const d = await jobpilot.draftAnswer(id, question);
+      setDrafts((m) => ({ ...m, [question]: d }));
+      if (d.answer) setAnswers((a) => ({ ...a, [question]: d.answer }));
+    } finally {
+      setDrafting(null);
+    }
+  }
+
+  async function tailorResume(jobId: number) {
+    setBusy(true);
+    try {
+      setResume(await jobpilot.tailorResume(data!.app.profile_id, jobId));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function runPrepare() {
     setBusy(true);
@@ -137,17 +160,48 @@ export default function ApplicationDetailPage() {
                     ⚠️ {plan.open_questions.length} need you
                   </p>
                   <div className="mt-2 flex flex-col gap-3">
-                    {plan.open_questions.map((q) => (
+                    {plan.open_questions.map((q) => {
+                      const d = drafts[q.question];
+                      return (
                       <div key={q.question} className="rounded-md border border-amber-200 bg-amber-50 p-3">
                         <p className="text-sm font-medium">{q.question}</p>
                         <p className="text-xs text-amber-700">{q.reason}</p>
+                        {q.suggestion && !d && (
+                          <p className="mt-1 text-xs text-gray-500">💡 Suggested: {q.suggestion}</p>
+                        )}
+                        {d && (
+                          <div className="mt-2 rounded border border-gray-200 bg-white p-2 text-xs">
+                            <span
+                              className={`font-medium ${d.grounded ? "text-green-700" : "text-red-600"}`}
+                            >
+                              {d.grounded ? "✓ Grounded" : "⚠ Unverified"}
+                            </span>{" "}
+                            <span className="text-gray-400">
+                              · {d.provider} · confidence {d.confidence.toFixed(0)}%
+                            </span>
+                            <p className="mt-1 text-gray-600">{d.reason}</p>
+                            {d.violations.length > 0 && (
+                              <ul className="mt-1 text-red-600">
+                                {d.violations.map((v, i) => <li key={i}>• {v}</li>)}
+                              </ul>
+                            )}
+                          </div>
+                        )}
                         <div className="mt-2 flex gap-2">
                           <input
-                            value={answers[q.question] ?? ""}
+                            value={answers[q.question] ?? q.suggestion ?? ""}
                             onChange={(e) => setAnswers((a) => ({ ...a, [q.question]: e.target.value }))}
                             placeholder="Your answer…"
                             className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
                           />
+                          <button
+                            onClick={() => draft(q.question)}
+                            disabled={drafting === q.question}
+                            className="rounded border border-blue-300 px-2 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            title="Draft a grounded answer from your profile"
+                          >
+                            {drafting === q.question ? "…" : "✨ Draft"}
+                          </button>
                           <button
                             onClick={() => saveAnswer(q.question)}
                             disabled={busy}
@@ -157,7 +211,8 @@ export default function ApplicationDetailPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -187,6 +242,72 @@ export default function ApplicationDetailPage() {
           </ol>
         </Card>
       </div>
+
+      {/* Resume tailoring (LLM layer, grounded) */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Tailor resume
+          </h2>
+          <button
+            onClick={() => job && tailorResume(job.id)}
+            disabled={busy || !job}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+          >
+            ✨ Tailor to this role
+          </button>
+        </div>
+
+        {resume ? (
+          <div className="mt-4 flex flex-col gap-3 text-sm">
+            <div>
+              <span className={`text-xs font-medium ${resume.grounded ? "text-green-700" : "text-red-600"}`}>
+                {resume.grounded ? "✓ Grounded — no invented claims" : "⚠ Contains unverified claims"}
+              </span>
+              <span className="ml-2 text-xs text-gray-400">via {resume.provider}</span>
+              <p className="mt-1 rounded-md bg-gray-50 p-3 text-gray-800">{resume.summary}</p>
+            </div>
+
+            {resume.highlighted_skills.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500">Skills to lead with</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {resume.highlighted_skills.map((s) => (
+                    <span key={s} className="rounded bg-green-50 px-2 py-0.5 text-xs text-green-800">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {resume.missing_skills.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500">Gaps to be honest about</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {resume.missing_skills.map((s) => (
+                    <span key={s} className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-800">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {resume.emphasis.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500">Experience, reordered by relevance</p>
+                <ol className="mt-1 flex flex-col gap-1">
+                  {resume.emphasis.map((b, i) => (
+                    <li key={i} className="text-gray-700">• {b.text}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-gray-500">
+            Reorders and summarizes your real experience for this role — emphasize only, never
+            embellish. Every line is checked against your profile before it&apos;s shown.
+          </p>
+        )}
+      </Card>
     </div>
   );
 }
