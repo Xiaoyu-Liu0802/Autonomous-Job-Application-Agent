@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from app.sources.ashby import AshbySource
 from app.sources.base import JobSource
+from app.sources.brightdata import BrightDataSource
 from app.sources.greenhouse import GreenhouseSource
 from app.sources.lever import LeverSource
 
@@ -10,6 +11,7 @@ _BUILDERS = {
     "greenhouse": GreenhouseSource,
     "lever": LeverSource,
     "ashby": AshbySource,
+    "brightdata": BrightDataSource,
 }
 
 
@@ -44,4 +46,4 @@ DEFAULT_SOURCES: list[dict[str, str]] = [
 ]
 
 __all__ = ["JobSource", "build_source", "DEFAULT_SOURCES",
-           "GreenhouseSource", "LeverSource", "AshbySource"]
+           "GreenhouseSource", "LeverSource", "AshbySource", "BrightDataSource"]

@@ -29,5 +29,22 @@ class Settings(BaseSettings):
     # to the human as a suggestion instead.
     min_answer_confidence: float = 75.0
 
+    # ── Bright Data (LinkedIn discovery via the Dataset API) ──────────────
+    # Opt-in, paid source. Set JOBPILOT_BRIGHTDATA_API_TOKEN to enable it; the
+    # adapter errors clearly (surfaced per-source) when it's unset. The default
+    # dataset id is Bright Data's "LinkedIn job listings" dataset, confirmed
+    # against the brightdata-mcp server source (tool id: linkedin_job_listings).
+    # Kept overridable via JOBPILOT_BRIGHTDATA_LINKEDIN_JOBS_DATASET in case it's
+    # reissued. (Other LinkedIn datasets: company gd_l1vikfnt1wgvvqz95w,
+    # people-profile gd_l1viktl72bvl7bjuj0.)
+    brightdata_api_token: str = ""
+    brightdata_base_url: str = "https://api.brightdata.com/datasets/v3"
+    brightdata_linkedin_jobs_dataset: str = "gd_lpfll7v5hcqtkxl6l"
+    # Default location used when discovering by keyword (matches the app's focus).
+    brightdata_location: str = "San Francisco Bay Area"
+    # Async discover polling: how long to wait for a snapshot, and the interval.
+    brightdata_timeout: float = 120.0
+    brightdata_poll_interval: float = 5.0
+
 
 settings = Settings()
