@@ -49,11 +49,14 @@ def _sample_profile() -> CandidateProfile:
 
 
 def _sample_jobs() -> list[Job]:
+    # Real companies link to their live careers pages. The fictional demo
+    # companies (DataCorp / Acme / Seedling) have no real posting, so they carry
+    # no URL — the dashboard simply omits the "View posting" link for them.
     return [
         Job(  # Strong, clean fit -> AUTO_APPLY
             external_id="openai-mle-001", company="OpenAI", title="Machine Learning Engineer",
             location="San Francisco, CA", remote=False, salary_min=200_000, salary_max=320_000,
-            url="https://openai.com/careers/mle", source="greenhouse", application_method="ats",
+            url="https://openai.com/careers/", source="greenhouse", application_method="ats",
             description="Build and scale ML infrastructure for frontier models.",
             requirements=["Distributed systems", "ML infrastructure", "Production experience"],
             skills=["Python", "LLM", "Kubernetes", "AWS", "RAG"],
@@ -62,7 +65,7 @@ def _sample_jobs() -> list[Job]:
         Job(  # Great fit but a missing skill -> REVIEW (gap needs confirmation)
             external_id="anthropic-swe-002", company="Anthropic", title="Software Engineer, Backend",
             location="San Francisco, CA", remote=True, salary_min=210_000, salary_max=340_000,
-            url="https://anthropic.com/careers/swe", source="greenhouse", application_method="ats",
+            url="https://www.anthropic.com/careers", source="greenhouse", application_method="ats",
             description="Backend systems for Claude products.",
             requirements=["Distributed systems", "Go or Python", "Terraform"],
             skills=["Go", "Python", "Kubernetes", "gRPC", "Terraform"],
@@ -71,7 +74,7 @@ def _sample_jobs() -> list[Job]:
         Job(  # Solid -> AUTO_APPLY / high
             external_id="google-swe-003", company="Google", title="Software Engineer",
             location="Mountain View, CA", remote=False, salary_min=180_000, salary_max=280_000,
-            url="https://careers.google.com/swe", source="google", application_method="ats",
+            url="https://www.google.com/about/careers/applications/", source="google", application_method="ats",
             description="Backend services at scale.",
             requirements=["Java or C++", "Distributed systems"],
             skills=["Java", "C++", "Kubernetes", "PostgreSQL"],
@@ -80,7 +83,7 @@ def _sample_jobs() -> list[Job]:
         Job(  # Borderline title + location mismatch -> REVIEW/REJECT
             external_id="datacorp-ds-004", company="DataCorp", title="Senior Data Scientist",
             location="Austin, TX", remote=False, salary_min=160_000, salary_max=210_000,
-            url="https://datacorp.example/ds", source="lever", application_method="external",
+            url="", source="lever", application_method="external",
             description="Statistical modeling and experimentation.",
             requirements=["Statistics", "R or Python", "5+ years"],
             skills=["Python", "R", "Statistics", "SQL"],
@@ -89,7 +92,7 @@ def _sample_jobs() -> list[Job]:
         Job(  # Excluded company -> REJECT
             external_id="acme-swe-005", company="Acme Defense Systems", title="Software Engineer",
             location="Remote", remote=True, salary_min=170_000, salary_max=230_000,
-            url="https://acme.example/swe", source="user", application_method="external",
+            url="", source="user", application_method="external",
             description="Mission systems software.",
             requirements=["C++", "Security clearance"],
             skills=["C++", "Python"],
@@ -98,7 +101,7 @@ def _sample_jobs() -> list[Job]:
         Job(  # Below salary floor -> REJECT
             external_id="startup-swe-006", company="Seedling AI", title="Founding Software Engineer",
             location="Remote", remote=True, salary_min=110_000, salary_max=140_000,
-            url="https://seedling.example/founding-swe", source="user", application_method="email",
+            url="", source="user", application_method="email",
             description="Early-stage AI startup, wear many hats.",
             requirements=["Full-stack", "LLM apps"],
             skills=["Python", "React", "LLM", "RAG", "MCP"],
