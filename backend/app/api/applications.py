@@ -20,6 +20,21 @@ from app.models import (
     DecisionCategory,
     Job,
 )
+from app.models.application import POST_SUBMIT_STATES
+
+# Pre-submit funnel states: the application exists but hasn't been sent yet.
+_PRE_SUBMIT = {ApplicationStatus.PREPARING, ApplicationStatus.NEEDS_REVIEW}
+
+# Friendly log icons for real, human-logged pipeline events.
+_EVENT_ICON = {
+    ApplicationStatus.RECRUITER_SCREEN: "📞",
+    ApplicationStatus.TECHNICAL_INTERVIEW: "💻",
+    ApplicationStatus.ONSITE: "🏢",
+    ApplicationStatus.OFFER: "🎉",
+    ApplicationStatus.REJECTED: "❌",
+    ApplicationStatus.GHOSTED: "👻",
+    ApplicationStatus.WITHDRAWN: "🚪",
+}
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -104,7 +119,9 @@ def create_application(body: CreateApplication, session: Session = Depends(get_s
     status_map = {
         DecisionCategory.AUTO_APPLY: ApplicationStatus.PREPARING,
         DecisionCategory.REVIEW: ApplicationStatus.NEEDS_REVIEW,
-        DecisionCategory.REJECT: ApplicationStatus.REJECTED,
+        # A REJECT is the *agent* choosing not to apply — a "skipped", NOT an
+        # employer rejection. Those are different things and get different states.
+        DecisionCategory.REJECT: ApplicationStatus.SKIPPED,
     }
 
     app = Application(
@@ -148,6 +165,51 @@ def advance(application_id: int, session: Session = Depends(get_session)) -> App
         _log(app, "✓", "Application submitted")
     else:
         _log(app, "→", f"Advanced to {app.status.value}")
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
+
+
+@router.post("/{application_id}/submit", response_model=Application)
+def submit(application_id: int, session: Session = Depends(get_session)) -> Application:
+    """Record that *you* submitted the application on the real ATS (fill-and-pause
+    means the human clicks Submit). This is the single gate from the pre-submit
+    funnel into the live, post-submit pipeline — you can't log interview stages
+    before it."""
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    if app.status not in _PRE_SUBMIT:
+        raise HTTPException(
+            409,
+            f"Can only submit from 'preparing' or 'needs_review' (currently '{app.status.value}').",
+        )
+    app.status = ApplicationStatus.APPLIED
+    app.applied_at = _now()
+    _log(app, "✅", "You marked this as submitted")
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    return app
+
+
+@router.post("/{application_id}/log-event", response_model=Application)
+def log_event(application_id: int, body: StatusUpdate, session: Session = Depends(get_session)) -> Application:
+    """Manually log a *real-world* pipeline event you observed (recruiter screen,
+    interview, offer, rejection, …). Only valid after the application has been
+    submitted — JobPilot has no email/ATS integration, so these are entered by you."""
+    app = session.get(Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    if body.status not in POST_SUBMIT_STATES:
+        raise HTTPException(422, f"'{body.status.value}' is not a loggable post-submit event.")
+    already_submitted = app.status == ApplicationStatus.APPLIED or app.status in POST_SUBMIT_STATES
+    if not already_submitted:
+        raise HTTPException(409, "Mark the application as submitted before logging real events.")
+
+    app.status = body.status
+    _log(app, _EVENT_ICON.get(body.status, "•"), f"Logged: {body.status.value.replace('_', ' ')}")
     session.add(app)
     session.commit()
     session.refresh(app)

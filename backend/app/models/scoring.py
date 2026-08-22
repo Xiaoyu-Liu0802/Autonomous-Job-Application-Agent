@@ -42,5 +42,11 @@ class ScoredJob(BaseModel):
     job_id: int
     company: str
     title: str
+    # Surfaced so the UI can show/filter on them without a second fetch.
+    location: str = ""
+    remote: bool = False
+    employment_type: str = ""
+    min_years_experience: float = 0.0
+    url: str = ""
     score: MatchScore
     decision: Decision
