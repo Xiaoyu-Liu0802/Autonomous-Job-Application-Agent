@@ -31,3 +31,5 @@ class Job(SQLModel, table=True):
     date_posted: str = ""
     source: str = ""               # "greenhouse", "lever", "user", ...
     application_method: str = ""   # "external", "ats", "email"
+    # "full_time" | "part_time" | "contract" | "internship" | "temporary" | ""
+    employment_type: str = ""

@@ -50,8 +50,23 @@ export interface ScoredJob {
   job_id: number;
   company: string;
   title: string;
+  location: string;
+  remote: boolean;
+  employment_type: string;
+  min_years_experience: number;
+  url: string;
   score: MatchScore;
   decision: Decision;
+}
+
+export interface MatchFilters {
+  minScore?: number;
+  category?: DecisionCategory;
+  minYears?: number;
+  maxYears?: number;
+  location?: string;
+  employmentType?: string;
+  includeRemote?: boolean;
 }
 
 export type ApplicationStatus =
@@ -171,11 +186,16 @@ export const jobpilot = {
   profiles: () => api<Profile[]>("/profiles"),
   jobs: () => api<Job[]>("/jobs"),
   job: (id: number) => api<Job>(`/jobs/${id}`),
-  matches: (profileId: number, minScore = 0, category?: DecisionCategory) =>
-    api<ScoredJob[]>(
-      `/matches/${profileId}?min_score=${minScore}` +
-        (category ? `&category=${category}` : "")
-    ),
+  matches: (profileId: number, f: MatchFilters = {}) => {
+    const q = new URLSearchParams({ min_score: String(f.minScore ?? 0) });
+    if (f.category) q.set("category", f.category);
+    if (f.minYears != null) q.set("min_years", String(f.minYears));
+    if (f.maxYears != null) q.set("max_years", String(f.maxYears));
+    if (f.location) q.set("location", f.location);
+    if (f.employmentType) q.set("employment_type", f.employmentType);
+    if (f.includeRemote) q.set("include_remote", "true");
+    return api<ScoredJob[]>(`/matches/${profileId}?${q.toString()}`);
+  },
   applications: () => api<Application[]>("/applications"),
   application: (id: number) => api<Application>(`/applications/${id}`),
   funnel: () => api<Record<string, number>>("/applications/funnel"),

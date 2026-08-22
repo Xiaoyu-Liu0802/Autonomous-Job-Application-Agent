@@ -90,6 +90,42 @@ def is_remote(location: str, text: str) -> bool:
     return "remote" in location.lower() or "fully remote" in text.lower()
 
 
+# Employment type. Most postings are full-time and don't say so explicitly, so
+# full_time is the default; we only override when the title/text signals other.
+_INTERN_RE = re.compile(r"\b(intern|internship|co-?op)\b", re.IGNORECASE)
+_CONTRACT_RE = re.compile(r"\b(contract|contractor|fixed[- ]term|freelance)\b", re.IGNORECASE)
+_PARTTIME_RE = re.compile(r"\bpart[- ]time\b", re.IGNORECASE)
+_TEMP_RE = re.compile(r"\b(temporary|seasonal)\b", re.IGNORECASE)
+
+# Normalize the various labels ATS APIs use into our canonical values.
+_EMPLOYMENT_ALIASES = {
+    "fulltime": "full_time", "full_time": "full_time", "full time": "full_time",
+    "parttime": "part_time", "part_time": "part_time", "part time": "part_time",
+    "intern": "internship", "internship": "internship",
+    "contract": "contract", "contractor": "contract",
+    "temporary": "temporary", "temp": "temporary",
+}
+
+
+def normalize_employment_type(raw: str) -> str:
+    """Map an ATS-provided label (e.g. Ashby's 'FullTime') to our canonical value."""
+    return _EMPLOYMENT_ALIASES.get(raw.strip().lower().replace("-", "_"), "")
+
+
+def extract_employment_type(title: str, text: str) -> str:
+    """Infer employment type from title/description when the source omits it."""
+    haystack = f"{title}\n{text}"
+    if _INTERN_RE.search(title) or _INTERN_RE.search(text):
+        return "internship"
+    if _PARTTIME_RE.search(haystack):
+        return "part_time"
+    if _CONTRACT_RE.search(haystack):
+        return "contract"
+    if _TEMP_RE.search(haystack):
+        return "temporary"
+    return "full_time"
+
+
 def normalize_job(
     *,
     external_id: str,
@@ -101,8 +137,12 @@ def normalize_job(
     source: str,
     application_method: str = "ats",
     date_posted: str = "",
+    employment_type: str = "",
 ) -> Job:
-    """Assemble a ``Job`` with skills/years/education/salary inferred from text."""
+    """Assemble a ``Job`` with skills/years/education/salary inferred from text.
+
+    ``employment_type`` may be passed in when the source exposes it explicitly
+    (e.g. Ashby); otherwise it is inferred from the title/description."""
     haystack = f"{title}\n{description}"
     salary_min, salary_max = extract_salary(description)
     return Job(
@@ -122,4 +162,5 @@ def normalize_job(
         date_posted=date_posted,
         source=source,
         application_method=application_method,
+        employment_type=employment_type or extract_employment_type(title, description),
     )

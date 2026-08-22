@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from app.models import Job
 from app.sources.base import http_get_json
-from app.sources.normalize import normalize_job, strip_html
+from app.sources.normalize import normalize_employment_type, normalize_job, strip_html
 
 API = "https://api.ashbyhq.com/posting-api/job-board/{company}?includeCompensation=true"
 
@@ -33,6 +33,7 @@ class AshbySource:
                 description=description,
                 source="ashby",
                 date_posted=(j.get("publishedAt") or "")[:10],
+                employment_type=normalize_employment_type(j.get("employmentType", "")),
             )
             # Ashby exposes an explicit remote flag; trust it when present.
             if j.get("isRemote"):

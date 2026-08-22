@@ -10,6 +10,16 @@ const DEFAULT_SOURCES = [
   { type: "ashby", token: "openai" },
   { type: "greenhouse", token: "stripe" },
   { type: "greenhouse", token: "databricks" },
+  { type: "greenhouse", token: "airbnb" },
+  { type: "greenhouse", token: "coinbase" },
+  { type: "greenhouse", token: "dropbox" },
+  { type: "greenhouse", token: "instacart" },
+  { type: "greenhouse", token: "doordashusa" },
+  { type: "greenhouse", token: "brex" },
+  { type: "greenhouse", token: "samsara" },
+  { type: "greenhouse", token: "robinhood" },
+  { type: "greenhouse", token: "gitlab" },
+  { type: "ashby", token: "ramp" },
 ];
 
 export default function DiscoveryPage() {
